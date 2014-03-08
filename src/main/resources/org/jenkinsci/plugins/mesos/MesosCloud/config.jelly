@@ -50,6 +50,21 @@
             <f:radio name="checkpoint" value="false" checked="${instance.checkpoint == false}" id="checkpoint.false"/>
             <st:nbsp/>${%No}
         </f:entry>
+
+        <f:entry title="${%Docker Support}" description="${%Enable Mesos Docker executor?}">
+            <f:radio name="dockerEnabled" value="true" checked="${instance.dockerEnabled == true}" id="dockerEnabled.true"/>
+            <st:nbsp/>${%Yes}
+            <f:radio name="dockerEnabled" value="false" checked="${instance.dockerEnabled == false}" id="dockerEnabled.false"/>
+            <st:nbsp/>${%No}
+        </f:entry>
+
+        <f:entry title="${%Docker Executor Path}">
+            <f:textbox field="dockerExecutorPath" default="/var/lib/mesos/executors/docker2"/>
+        </f:entry>
+
+        <f:entry title="${%Docker dind image}">
+            <f:textbox field="dockerImage" default="hashish/jenkins-dind"/>
+        </f:entry>
     </f:advanced>
 
     <f:validateButton title="${%Test Connection}" progress="${%Testing...}" method="testConnection" with="master,nativeLibraryPath"/>

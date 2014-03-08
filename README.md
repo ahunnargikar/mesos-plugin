@@ -93,6 +93,16 @@ Mesos slaves based on attributes specified in JSON format. Ex. {"clusterType":"j
 Checkpointing can now be enabled by setting the "Slave Checkpointing" option to yes in the cloud config. This will allow the Jenkins
 master to finish running its slave jobs even if the Mesos slave process temporarily goes down.
 
+### Advanced Docker Support ###
+
+There are new fields in the cloud plugin configuration specifically targeted towards deploying Jenkins slave processes inside Docker containers. You will need Docker (https://www.docker.io/gettingstarted/#h_installation) and the Docker executor (https://github.com/mesosphere/mesos-docker) preinstalled on all the Mesos slave servers.
+
+	Is Docker enabled: This boolean flag enables Docker functionality for the plugin. Its false by default.
+
+	Mesos Slave Docker Executor Path: This field contains the Docker executor path on the Mesos slave servers. Ex. /var/lib/mesos/executors/docker
+
+	Docker Jenkins Slave Image Name: You can specify the Docker image that that Jenkins slave will be launched into.
+
 ### Configuring Jenkins jobs ###
 
 Finally, just add `mesos` label to the jobs (configure -> Restrict where this project can run checkbox) that you want to be run on a

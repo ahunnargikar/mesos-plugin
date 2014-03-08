@@ -60,6 +60,9 @@ public class MesosCloud extends Cloud {
   private String frameworkName;
   private final JSONObject slaveAttributes; // Slave attributes JSON representation.
   private final boolean checkpoint; // Set true to enable Mesos slave checkpoints. False by default.
+  private final boolean dockerEnabled; // Set true to enable slaves to be launched using the Docker executor. False by default.
+  private final String dockerExecutorPath; // Docker executor path on the Mesos slaves.
+  private final String dockerImage; // Docker-in-docker (dind) image to be used to launch Jenkins slaves
 
   // Find the default values for these variables in
   // src/main/resources/org/jenkinsci/plugins/mesos/MesosCloud/config.jelly.
@@ -115,7 +118,7 @@ public class MesosCloud extends Cloud {
 
   @DataBoundConstructor
   public MesosCloud(String nativeLibraryPath, String master, String description, String frameworkName, String slaveCpus,
-      int slaveMem, int maxExecutors, String executorCpus, int executorMem, int idleTerminationMinutes, String slaveAttributes, boolean checkpoint)
+      int slaveMem, int maxExecutors, String executorCpus, int executorMem, int idleTerminationMinutes, String slaveAttributes, boolean checkpoint, boolean dockerEnabled, String dockerExecutorPath, String dockerImage)
           throws NumberFormatException {
     super("MesosCloud");
 
@@ -130,6 +133,9 @@ public class MesosCloud extends Cloud {
     this.executorMem = executorMem;
     this.idleTerminationMinutes = idleTerminationMinutes;
     this.checkpoint = checkpoint;
+    this.dockerEnabled = dockerEnabled;
+    this.dockerExecutorPath = dockerExecutorPath;
+    this.dockerImage = dockerImage;
 
     //Parse the attributes provided from the cloud config
     JSONObject jsonObject = null;
@@ -321,6 +327,27 @@ public class MesosCloud extends Cloud {
     return idleTerminationMinutes;
   }
 
+    /**
+     * @return the dockerEnabled
+     */
+    public boolean isDockerEnabled() {
+        return dockerEnabled;
+    }
+
+    /**
+     * @return the dockerExecutorPath
+     */
+    public String getDockerExecutorPath() {
+        return dockerExecutorPath;
+    }
+
+    /**
+     * @return the dockerImage
+     */
+    public String getDockerImage() {
+        return dockerImage;
+    }
+
   @Extension
   public static class DescriptorImpl extends Descriptor<Cloud> {
     private String nativeLibraryPath;
@@ -335,6 +362,9 @@ public class MesosCloud extends Cloud {
     private int maxExecutors;
     private int executorMem; // MB.
     private int idleTerminationMinutes;
+    private boolean dockerEnabled;
+    private String dockerExecutorPath;
+    private String dockerImage;
 
     @Override
     public String getDisplayName() {
@@ -355,6 +385,9 @@ public class MesosCloud extends Cloud {
       maxExecutors = object.getInt("maxExecutors");
       executorMem = object.getInt("executorMem");
       idleTerminationMinutes = object.getInt("idleTerminationMinutes");
+      dockerEnabled = object.getBoolean("dockerEnabled");
+      dockerExecutorPath = object.getString("dockerExecutorPath");
+      dockerImage = object.getString("dockerImage");
       save();
       return super.configure(request, object);
     }

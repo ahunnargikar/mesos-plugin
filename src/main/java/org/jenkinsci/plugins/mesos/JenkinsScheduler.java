@@ -16,6 +16,7 @@
 package org.jenkinsci.plugins.mesos;
 
 
+import com.google.protobuf.ByteString;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -24,11 +25,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.logging.Logger;
+import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
+import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos.Attribute;
 import org.apache.mesos.Protos.CommandInfo;
 import org.apache.mesos.Protos.ExecutorID;
+import org.apache.mesos.Protos.ExecutorInfo;
 import org.apache.mesos.Protos.Filters;
 import org.apache.mesos.Protos.FrameworkID;
 import org.apache.mesos.Protos.FrameworkInfo;
@@ -80,7 +84,7 @@ public class JenkinsScheduler implements Scheduler {
       public void run() {
         // Have Mesos fill in the current user.
         FrameworkInfo framework = FrameworkInfo.newBuilder()
-          .setUser("")
+          .setUser("root")
           .setName(mesosCloud.getFrameworkName())
           .setCheckpoint(mesosCloud.isCheckpoint()).build();
 
@@ -180,8 +184,18 @@ public class JenkinsScheduler implements Scheduler {
       for (Request request : requests) {
         if (matches(offer, request)) {
           matched = true;
-          LOGGER.info("Offer matched! Creating mesos task");
-          createMesosTask(offer, request);
+
+          //Create Mesos Docker task
+          if (this.getMesosCloud().isDockerEnabled()) {
+              LOGGER.info("Offer matched! Creating mesos Docker task");              
+              createMesosDockerTask(offer, request);
+          }
+          //Create normal Mesos Task
+          else {
+            LOGGER.info("Offer matched! Creating mesos task");
+            createMesosTask(offer, request);
+          }
+
           requests.remove(request);
           break;
         }
@@ -327,6 +341,85 @@ public class JenkinsScheduler implements Scheduler {
     results.put(taskId, new Result(request.result, new Mesos.JenkinsSlave(offer.getSlaveId()
         .getValue())));
   }
+
+
+    /**
+     * Launches the Jenkins slave task via the Docker executor instead of using
+     * the default Mesos command executor
+     *
+     * @param offer Mesos offer data object
+     * @param request Task request data object
+     */
+    protected void createMesosDockerTask(Offer offer, Request request) {
+
+        TaskID taskId = TaskID.newBuilder().setValue(request.request.slave.name).build();
+
+        //Populate the JSON payload for the Mesos Docker executor
+        JSONObject jsonData = new JSONObject();
+        jsonData.put("id", "task_" + taskId.getValue());
+        jsonData.put("cmd", getMesosCloud().getDockerImage());
+        jsonData.put("env", new JSONObject());
+        jsonData.put("instances", 1);
+        jsonData.put("cpus", request.request.cpus);
+        jsonData.put("mem", (1 + JVM_MEM_OVERHEAD_FACTOR) * request.request.mem);
+        jsonData.put("executor", getMesosCloud().getDockerExecutorPath());
+        jsonData.put("constraints", new JSONArray());
+        jsonData.put("uris", new JSONArray());
+        jsonData.put("ports", new JSONArray());
+        jsonData.put("taskRateLimit", 1);
+
+        //Populate the slave launch command as an environment variable
+        //Example command: 
+        //  wget -O slave.jar http://192.168.56.101:9000/jnlpJars/slave.jar && 
+        //  java -DHUDSON_HOME=jenkins -server -Xmx640m -Xms16m -XX:+UseConcMarkSweepGC -Djava.net.preferIPv4Stack=true -jar 
+        //  slave.jar -jnlpUrl http://192.168.56.101:9000/computer/mesos-jenkins-408db551-2287-4b53-b49d-9136fb76af8a/slave-agent.jnlp
+        JSONObject envVars = new JSONObject();
+        envVars.put("JENKINS_COMMAND", 
+                "wget -O slave.jar " + joinPaths(jenkinsMaster, SLAVE_JAR_URI_SUFFIX) + " && " 
+                + String.format(SLAVE_COMMAND_FORMAT, request.request.mem, getJnlpUrl(request.request.slave.name)));
+        jsonData.put("env", envVars);
+
+        //Define the custom Docker executor
+        String command = StringEscapeUtils.escapeJava("exec " + getMesosCloud().getDockerExecutorPath() + " " + getMesosCloud().getDockerImage());
+        ExecutorInfo executor = ExecutorInfo.newBuilder()
+                .setExecutorId(ExecutorID.newBuilder().setValue("executor_" + taskId.getValue()).build())
+                .setCommand(CommandInfo.newBuilder().setValue(command).build())
+                .setFrameworkId(offer.getFrameworkId())
+                .build();
+        LOGGER.info("Launching task " + taskId.getValue() + " with command " + command);
+
+        //Define the task and include the docker executor
+        TaskInfo task = TaskInfo.newBuilder()
+                .setName("task " + taskId.getValue())
+                .setTaskId(taskId)
+                .setSlaveId(offer.getSlaveId())
+                .addResources(
+                        Resource
+                        .newBuilder()
+                        .setName("cpus")
+                        .setType(Value.Type.SCALAR)
+                        .setScalar(Value.Scalar.newBuilder().setValue(request.request.cpus).build())
+                        .build())
+                .addResources(
+                        Resource
+                        .newBuilder()
+                        .setName("mem")
+                        .setType(Value.Type.SCALAR)
+                        .setScalar(Value.Scalar.newBuilder().setValue((1 + JVM_MEM_OVERHEAD_FACTOR) * request.request.mem).build())
+                        .build())
+                .setData(ByteString.copyFromUtf8(jsonData.toString()))
+                .setExecutor(executor)
+                .build();
+
+        //Execute the task
+        List<TaskInfo> tasks = new ArrayList<TaskInfo>();
+        tasks.add(task);
+        List<OfferID> offerIds = new ArrayList<OfferID>();
+        offerIds.add(offer.getId());
+        Filters filters = Filters.newBuilder().setRefuseSeconds(1).build();
+        driver.launchTasks(offerIds, tasks, filters);
+        results.put(taskId, new Result(request.result, new Mesos.JenkinsSlave(offer.getSlaveId().getValue())));
+    }
 
   @Override
   public void offerRescinded(SchedulerDriver driver, OfferID offerId) {
